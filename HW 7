@@ -1,0 +1,203 @@
+Econometrics - Homework #7
+11.7.2025
+
+1) Group Members:
+• Romulo Jimenez 
+• Federico Ciandri
+• Marwan Kenaw
+
+
+# Lab 7
+
+
+library(ggplot2)
+library(tidyverse)
+library(haven)
+acs2021_couples$age_diff <- acs2021_couples$AGE - acs2021_couples$h_age
+acs2021_couples$RACE <- fct_recode(as.factor(acs2021_couples$RACE),
+                                   "White" = "1",
+                                   "Black" = "2",
+                                   "American Indian or Alaska Native" = "3",
+                                   "Chinese" = "4",
+                                   "Japanese" = "5",
+                                   "Other Asian or Pacific Islander" = "6",
+                                   "Other race" = "7",
+                                   "two races" = "8",
+                                   "three races" = "9")
+acs2021_couples$h_race <- fct_recode(as.factor(acs2021_couples$h_race),
+                                     "White" = "1",
+                                     "Black" = "2",
+                                     "American Indian or Alaska Native" = "3",
+                                     "Chinese" = "4",
+                                     "Japanese" = "5",
+                                     "Other Asian or Pacific Islander" = "6",
+                                     "Other race" = "7",
+                                     "two races" = "8",
+                                     "three races" = "9")
+acs2021_couples$HISPAN <- fct_recode(as.factor(acs2021_couples$HISPAN),
+                                     "Not Hispanic" = "0",
+                                     "Mexican" = "1",
+                                     "Puerto Rican" = "2",
+                                     "Cuban" = "3",
+                                     "Other" = "4")
+acs2021_couples$h_hispan <- fct_recode(as.factor(acs2021_couples$h_hispan),
+                                       "Not Hispanic" = "0",
+                                       "Mexican" = "1",
+                                       "Puerto Rican" = "2",
+                                       "Cuban" = "3",
+                                       "Other" = "4")
+trad_data <- acs2021_couples %>% filter( (SEX == "Female") & (h_sex == "Male") )
+trad_data$he_more_than_5yrs_than_her <- as.numeric(trad_data$age_diff < -5)
+table(trad_data$he_more_than_5yrs_than_her,cut(trad_data$age_diff,c(-100,-10, -5, 0, 5, 10, 100)))
+ols_out1 <- lm(he_more_than_5yrs_than_her ~ educ_hs + educ_somecoll + educ_college + educ_advdeg + AGE, data = trad_data)
+summary(ols_out1)
+ols_out2 <- lm(he_more_than_5yrs_than_her ~ educ_numeric + h_educ_numeric + AGE, data = trad_data)
+summary(ols_out2)
+ols_out3 <- lm(he_more_than_5yrs_than_her ~ EDUC + h_educ + AGE, data = trad_data)
+summary(ols_out3)
+ols_out4 <- lm(he_more_than_5yrs_than_her ~ educ_numeric + h_educ_numeric + AGE + STATEFIP, data = trad_data)
+summary(ols_out4)
+ols_out5 <- lm(he_more_than_5yrs_than_her ~ educ_numeric + h_educ_numeric + AGE + REGION, data = trad_data)
+summary(ols_out5)
+install.packages("marginaleffects")
+library(ggplot2)
+library(dplyr)
+library(broom)
+library(marginaleffects)
+library(scales)
+## 0) Clean factors used in plots (safe to re-run)
+acs2021_couples <- acs2021_couples %>%
+  mutate(
+    REGION = as.factor(REGION),
+    STATEFIP = as.factor(STATEFIP),
+    EDUC = as.factor(EDUC),
+    h_educ = as.factor(h_educ)
+  )
+ggplot(acs2021_couples, aes(x = educ_diff, y = age_diff)) +
+  geom_point(alpha = 0.05) +
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE) +
+  labs(title = "Age Difference vs. Education Difference",
+       x = "Education Difference (respondent - partner)",
+       y = "Age Difference (respondent - partner)") +
+  theme_minimal()
+ggplot(acs2021_couples, aes(x = educ_diff, y = age_diff)) +
+  geom_point(alpha = 0.05) +
+  geom_smooth(method = "lm", formula = y ~ poly(x, 3), se = TRUE) +
+  labs(title = "Age Difference vs. Education Difference (Cubic Fit)",
+       x = "Education Difference (respondent - partner)",
+       y = "Age Difference (respondent - partner)") +
+  theme_minimal()
+# Prediction grid over observed educ_diff
+grid_m2 <- acs2021_couples %>%
+  summarize(min_ed = quantile(educ_diff, 0.02, na.rm = TRUE),
+            max_ed = quantile(educ_diff, 0.98, na.rm = TRUE)) %>%
+  { data.frame(educ_diff = seq(.$min_ed, .$max_ed, length.out = 200)) }
+pred_m2 <- cbind(
+  grid_m2,
+  predict(m2, newdata = grid_m2, interval = "confidence")
+)
+ggplot(pred_m2, aes(x = educ_diff, y = fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2) +
+  labs(title = "Predicted Age Difference by Education Difference (Cubic)",
+       x = "Education Difference",
+       y = "Predicted Age Difference") +
+  theme_minimal()
+  
+  
+acs2021_couples <- acs2021_couples %>%
+  mutate(
+    agegap20 = as.integer(abs(age_diff) >= 20),        # 1 if 20+ years apart
+    man_older20 = case_when(                           # optional: 1 if man ≥20 yrs older
+      SEX == "Male" & h_sex == "Female" & (AGE - h_age) >= 20 ~ 1L,
+      SEX == "Female" & h_sex == "Male" & (AGE - h_age) <= -20 ~ 1L,
+      TRUE ~ 0L
+    )
+  )
+# Descriptive summary
+table(acs2021_couples$agegap20)
+prop.table(table(acs2021_couples$agegap20))  # percentage of 20+ year gaps
+# Regression example: does education difference predict 20-year gaps?
+m_gap20 <- glm(agegap20 ~ educ_diff + I(educ_diff^2),
+               data = acs2021_couples,
+               family = binomial())
+summary(m_gap20)
+library(dplyr)
+acs2021_couples <- acs2021_couples %>%
+  mutate(
+    # Identify couples both born in the same U.S. state
+    same_state = as.integer(BPL == h_bpl),
+    
+    # Flag 20+ year age gaps (already defined earlier)
+    agegap20 = as.integer(abs(age_diff) >= 20)
+  )
+# Filter couples with 20+ year gap and from same state
+same_state_gap20 <- acs2021_couples %>%
+  filter(agegap20 == 1, same_state == 1, !is.na(BPL)) %>%
+  group_by(BPL) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
+# Show top 5 states
+head(same_state_gap20, 5)
+library(ggplot2)
+library(dplyr)
+# Compute counts
+same_state_gap20 <- acs2021_couples %>%
+  mutate(
+    same_state = as.integer(BPL == h_bpl),
+    agegap20 = as.integer(abs(age_diff) >= 20)
+  ) %>%
+  filter(agegap20 == 1, same_state == 1, !is.na(BPL)) %>%
+  group_by(BPL) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  slice_head(n = 10)   # top 10 states
+# Bar chart
+ggplot(same_state_gap20, aes(x = reorder(BPL, count), y = count, fill = count)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  labs(
+    title = "Top States Where Couples From the Same State Have 20+ Year Age Gaps",
+    x = "State of Birth",
+    y = "Number of Couples"
+  ) +
+  theme_minimal(base_size = 14)
+> library(dplyr)
+> state_gaps <- trad_data %>%
++     group_by(STATEFIP) %>%
++     summarise(
++         avg_age_gap = mean(age_diff, na.rm = TRUE),
++         n = n()
++     ) %>%
++     filter(n > 1000)
+> state_gaps <- state_gaps %>%
++     mutate(state = as.factor(STATEFIP))
+>
+> state_gaps <- state_gaps %>%
++     mutate(state = as.factor(STATEFIP))
+>
+> library(ggplot2)
+>
+> ggplot(state_gaps, aes(x = reorder(STATEFIP, avg_age_gap), y = avg_age_gap, fill = avg_age_gap)) +
++     geom_col() +
++     coord_flip() +
++     labs(
++         title = "Average Husband–Wife Age Gap by State",
++         x = "State",
++         y = "Average Age Gap (years)"
++     ) +
++     scale_fill_gradient(low = "skyblue", high = "darkblue") +
++     theme_minimal()
+
+
+
+
+This analysis examined how age and education differences vary among married couples across the United States using the 2021 ACS dataset. 
+After calculating each couple’s age gap and filtering for traditional male–female pairs, several regression models were estimated to explore 
+how education levels and geography relate to large husband-older age gaps. The results showed that higher female education generally corresponds 
+with smaller age differences, even after controlling for state or region. Scatterplots and cubic regression fits revealed only weak, nonlinear 
+links between educational and age differences, suggesting that while education plays some role, its impact is limited. Additional analysis 
+identified where extreme 20+ year age gaps are most common, largely in populous states like California, New York, and Texas, and showed that average
+husband–wife age gaps vary modestly by state, typically ranging from two to three years. Hypothesis tests, including t-tests, F-tests, and chi-squared tests, 
+were used to confirm whether these relationships were statistically significant, supporting the conclusion that demographic and educational factors influence, 
+but do not solely determine, marital age gaps in the U.S.
